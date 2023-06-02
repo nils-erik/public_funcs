@@ -158,6 +158,295 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
     print(f"{sov_sheet} successfully uploaded to Database")
 
 
+def upload_hv_sov(sov_sheet, sql_engine) -> None:
+    # upload the metadata
+    readsheetname = "HV SOV"
+    df_master = pd.read_excel(sov_sheet, sheet_name=readsheetname, header=None)
+    # change the other imports to use master.
+    df = df_master.drop(df_master[df_master.index >= 17].index)
+    df = df.iloc[:, :3]
+    # df.rename(columns={'1': 'ColumnName', '2': 'ColumnValue'}, inplace=True)
+    df.rename(columns={df.columns[1]: "ColumnName"}, inplace=True)
+    df.rename(columns={df.columns[2]: "ColumnValue"}, inplace=True)
+    df.drop(df.columns[[0]], axis=1, inplace=True)
+    df["ColumnValue"] = df["ColumnValue"].astype(str)
+    # test.pivot(index=None, columns='t1',values='t2').bfill().iloc[[0],:]
+    dfpivot = (
+        df.pivot(index=None, columns="ColumnName", values="ColumnValue")
+        .bfill()
+        .iloc[[0], :]
+    )
+    dfpivot.rename(
+        columns={
+            "Project Name": "Project_Name",
+            "Project Tracker ID": "Project_Tracker_ID",
+            "Project Type": "Project_Type",
+            "Scenario Name": "Scenario_Name",
+            "Scenario ID": "Scenario_ID",
+            "Estimate Source": "Estimate_Source",
+            "Stage Gate": "Stage_Gate",
+            "Milestone": "Milestone",
+            "Design Package": "Design_Package",
+            "EPE Version": "EPE_Version",
+            "Buildable Land Version": "Buildable_Land_Version",
+            "MW DC": "MW_DC",
+            "MW AC": "MW_AC",
+            "Module Count": "Module_Count",
+            "Tracker Row Count": "Tracker_Row_Count",
+            "Labor \n(Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Contractor": "Contractor",
+            "Date Submitted": "Date_Submitted",
+        },
+        inplace=True,
+    )
+    metadata = MetaData()
+    table_name = "hv_projects"
+    # Make sure that the Column names and types match with your DataFrame's columns
+    table = Table(
+        table_name,
+        metadata,
+        Column("Project_Name", String),
+        Column("Project_Tracker_ID", Integer),
+        Column("Project_Type", String),
+        Column("Scenario_Name", String),
+        Column("Scenario_ID", String),
+        Column("Estimate_Source", String),
+        Column("Stage_Gate", String),
+        Column("Milestone", String),
+        Column("Design_Package", String),
+        Column("EPE_Version", String),
+        Column("Buildable_Land_Version", String),
+        Column("MW_AC", Float),
+        Column("Interconnect_Voltage", Float),
+        Column("Labor_Union_Prevailing_Non_Union", String),
+        Column("Contractor", String),
+        Column("Date_Submitted", DateTime),
+        Column("id", Integer),
+    )
+    with sql_engine.connect() as connection:
+        result = connection.execute(text("SELECT MAX(id) FROM hv_projects"))
+        max_id = result.fetchone()[0]
+    if max_id is None:
+        max_id = 0
+    droplist = dfpivot.columns.astype(str) == "nan"
+    if droplist.any():
+        dfpivot.drop(
+            dfpivot.columns[[i for i, drop in enumerate(droplist) if drop]],
+            axis=1,
+            inplace=True,
+        )
+    dfpivot["id"] = max_id + 1
+    # uploads the project
+    dfpivot.to_sql(
+        con=sql_engine,
+        schema="dbo",
+        name="hv_projects",
+        if_exists="append",
+        index=False,
+        dtype={
+            "Project_Name": String,
+            "Project_Tracker_ID": Integer,
+            "Project_Type": String,
+            "Scenario_Name": String,
+            "Scenario_ID": String,
+            "Estimate_Source": String,
+            "Stage_Gate": String,
+            "Milestone": String,
+            "Design_Package": String,
+            "EPE_Version": String,
+            "Buildable_Land_Version": String,
+            "MW_AC": Float,
+            "Interconnect_Voltage": Float,
+            "Labor_Union_Prevailing_Non_Union": String,
+            "Contractor": String,
+            "Date_Submitted": DateTime,
+            "id": Integer,
+        },
+    )
+    # upload the costing
+    # selects the first of the equivalent project ids, should be the last updated
+    Project_Tracker_ID = dfpivot["Project_Tracker_ID"][0]
+    query = text(
+        """select id from  hv_projects where Project_Tracker_ID = {}""".format(
+            Project_Tracker_ID, "{}"
+        )
+    )
+    df = pd.read_sql_query(query, sql_engine)
+    rid = df["id"].to_list()[-1]
+    print(f"Upload ID: {rid}, options: {df['id'].iloc[:]}")
+    df = df_master.drop(df_master[df_master.index <= 18].index)
+    df.rename(columns={df.columns[0]: "Cost_Structure"}, inplace=True)
+    df.rename(columns={df.columns[1]: "Description"}, inplace=True)
+    df.rename(columns={df.columns[2]: "Quantity"}, inplace=True)
+    df.rename(columns={df.columns[3]: "U_M"}, inplace=True)
+    df.rename(columns={df.columns[4]: "Unit_Rate"}, inplace=True)
+    df.rename(columns={df.columns[5]: "Extended_Price"}, inplace=True)
+    df.rename(columns={df.columns[6]: "Price_per_kW"}, inplace=True)
+    df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
+    df = df[df.Cost_Structure.notnull()]
+    df["id"] = rid
+
+    df.fillna(value=pd.NA, inplace=True)
+    df.to_sql(
+        con=sql_engine, schema="dbo", name="hv_sov", if_exists="append", index=False
+    )
+    print(f"{sov_sheet} successfully uploaded to Database")
+
+
+def upload_storage_sov(sov_sheet, sql_engine) -> None:
+    # upload the metadata
+    readsheetname = "Storage SOV"
+    df_master = pd.read_excel(sov_sheet, sheet_name=readsheetname, header=None)
+    # change the other imports to use master.
+    df = df_master.drop(df_master[df_master.index >= 23].index)
+    df = df.iloc[:, :3]
+    # df.rename(columns={'1': 'ColumnName', '2': 'ColumnValue'}, inplace=True)
+    df.rename(columns={df.columns[1]: "ColumnName"}, inplace=True)
+    df.rename(columns={df.columns[2]: "ColumnValue"}, inplace=True)
+    df.drop(df.columns[[0]], axis=1, inplace=True)
+    df["ColumnValue"] = df["ColumnValue"].astype(str)
+    # test.pivot(index=None, columns='t1',values='t2').bfill().iloc[[0],:]
+    dfpivot = (
+        df.pivot(index=None, columns="ColumnName", values="ColumnValue")
+        .bfill()
+        .iloc[[0], :]
+    )
+    dfpivot.rename(
+        columns={
+            "Project Name": "Project_Name",
+            "Project Tracker ID": "Project_Tracker_ID",
+            "Project Type": "Project_Type",
+            "Scenario Name": "Scenario_Name",
+            "Scenario ID": "Scenario_ID",
+            "Estimate Source": "Estimate_Source",
+            "Stage Gate": "Stage_Gate",
+            "Milestone": "Milestone",
+            "Design Package": "Design_Package",
+            "EPE Version": "EPE_Version",
+            "Buildable Land Version": "Buildable_Land_Version",
+            "BESS OEM": "BESS_OEM",
+            "Product Type": "Product_Type",
+            "Coupling": "Coupling",
+            "Battery Size at POI[MW]": "Battery_Size_at_POI[MW]",
+            "Discharge Duration[hr]": "Discharge_Duration[hr]",
+            "MWh Installed": "MWh_Installed",
+            "BESS Container Quantity": "BESS_Container_Quantity",
+            "PCS Quantity": "PCS_Quantity",
+            "Labor (Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Contractor": "Contractor",
+            "Date Submitted": "Date_Submitted",
+        },
+        inplace=True,
+    )
+    metadata = MetaData()
+    table_name = "storage_projects"
+    # Make sure that the Column names and types match with your DataFrame's columns
+    table = Table(
+        table_name,
+        metadata,
+        Column("Project_Name", String),
+        Column("Project_Tracker_ID", Integer),
+        Column("Project_Type", String),
+        Column("Scenario_Name", String),
+        Column("Scenario_ID", String),
+        Column("Estimate_Source", String),
+        Column("Stage_Gate", String),
+        Column("Milestone", String),
+        Column("Design_Package", String),
+        Column("EPE_Version", String),
+        Column("Buildable_Land_Version", String),
+        Column("BESS_OEM", String),
+        Column("Product_Type", String),
+        Column("Coupling", String),
+        Column("Battery_Size_at_POI[MW]", Float),
+        Column("Discharge_Duration[hr]", String),
+        Column("MWh_Installed", Float),
+        Column("BESS_Container_Quantity", Float),
+        Column("PCS_Quantity", Float),
+        Column("Labor_Union_Prevailing_Non_Union", String),
+        Column("Contractor", String),
+        Column("Date_Submitted", DateTime),
+        Column("id", Integer),
+    )
+    with sql_engine.connect() as connection:
+        result = connection.execute(text("SELECT MAX(id) FROM storage_projects"))
+        max_id = result.fetchone()[0]
+    if max_id is None:
+        max_id = 0
+    droplist = dfpivot.columns.astype(str) == "nan"
+    if droplist.any():
+        dfpivot.drop(
+            dfpivot.columns[[i for i, drop in enumerate(droplist) if drop]],
+            axis=1,
+            inplace=True,
+        )
+    dfpivot["id"] = max_id + 1
+    # uploads the project
+    dfpivot.to_sql(
+        con=sql_engine,
+        schema="dbo",
+        name="storage_projects",
+        if_exists="append",
+        index=False,
+        dtype={
+            "Project_Name": String,
+            "Project_Tracker_ID": Integer,
+            "Project_Type": String,
+            "Scenario_Name": String,
+            "Scenario_ID": String,
+            "Estimate_Source": String,
+            "Stage_Gate": String,
+            "Milestone": String,
+            "Design_Package": String,
+            "EPE_Version": String,
+            "Buildable_Land_Version": String,
+            "BESS_OEM": String,
+            "Product_Type": String,
+            "Coupling": String,
+            "Battery_Size_at_POI[MW]": Float,
+            "Discharge_Duration[hr]": String,
+            "MWh_Installed": Float,
+            "BESS_Container_Quantity": Float,
+            "PCS_Quantity": Float,
+            "Labor_Union_Prevailing_Non_Union": String,
+            "Contractor": String,
+            "Date_Submitted": DateTime,
+            "id": Integer,
+        },
+    )
+    # upload the costing
+    # selects the first of the equivalent project ids, should be the last updated
+    Project_Tracker_ID = dfpivot["Project_Tracker_ID"][0]
+    query = text(
+        """select id from  storage_projects where Project_Tracker_ID = {}""".format(
+            Project_Tracker_ID, "{}"
+        )
+    )
+    df = pd.read_sql_query(query, sql_engine)
+    rid = df["id"].to_list()[-1]
+    print(f"Upload ID: {rid}, options: {df['id'].iloc[:]}")
+    df = df_master.drop(df_master[df_master.index <= 18].index)
+    df.rename(columns={df.columns[0]: "Cost_Structure"}, inplace=True)
+    df.rename(columns={df.columns[1]: "Description"}, inplace=True)
+    df.rename(columns={df.columns[2]: "Quantity"}, inplace=True)
+    df.rename(columns={df.columns[3]: "U_M"}, inplace=True)
+    df.rename(columns={df.columns[4]: "Unit_Rate"}, inplace=True)
+    df.rename(columns={df.columns[5]: "Extended_Price"}, inplace=True)
+    df.rename(columns={df.columns[6]: "Price_per_kWh"}, inplace=True)
+    df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
+    df = df[df.Cost_Structure.notnull()]
+    df["id"] = rid
+    df.fillna(value=pd.NA, inplace=True)
+    df.to_sql(
+        con=sql_engine,
+        schema="dbo",
+        name="storage_sov",
+        if_exists="append",
+        index=False,
+    )
+    print(f"{sov_sheet} successfully uploaded to Database")
+
+
 def change_projid_to_integer(sql_engine):
     metadata = MetaData()
 
@@ -192,6 +481,30 @@ def change_projid_to_integer(sql_engine):
             "EXEC sp_rename 'solar_projects.Project_Tracker_ID_int', 'Project_Tracker_ID', 'COLUMN';"
         )
     print("Project_id successfully cast to INT")
+
+
+def db_conn_get():
+    driver = "ODBC+Driver+17+for+SQL+Server"
+    database = "EPC_SOV"
+    server = "sdhqhopsql01d"
+    conn_string = "mssql+pyodbc://{srv}/{db}?trusted_connection=yes&driver={dr}".format(
+        dr=driver, srv=server, db=database
+    )
+    engine = sa.create_engine(conn_string)
+    return engine
+
+
+def add_id_column(sql_engine):
+    metadata = MetaData()
+    my_table = Table("solar_projects", metadata, autoload_with=sql_engine)
+
+    # Add new column 'id'
+    with sql_engine.begin() as connection:
+        connection.execute("ALTER TABLE solar_projects ADD id INTEGER")
+
+    # Set the new 'id' column to 0 for one row
+    with sql_engine.begin() as connection:
+        connection.execute("UPDATE solar_projects SET id = 0")
 
 
 def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
@@ -503,30 +816,6 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
     # df["id"] = rid
     # df.to_sql(con=conn_db, schema="dbo", name="hv_sov", if_exists="append", index=False)
     print()
-
-
-def db_conn_get():
-    driver = "ODBC+Driver+17+for+SQL+Server"
-    database = "EPC_SOV"
-    server = "sdhqhopsql01d"
-    conn_string = "mssql+pyodbc://{srv}/{db}?trusted_connection=yes&driver={dr}".format(
-        dr=driver, srv=server, db=database
-    )
-    engine = sa.create_engine(conn_string)
-    return engine
-
-
-def add_id_column(sql_engine):
-    metadata = MetaData()
-    my_table = Table("solar_projects", metadata, autoload_with=sql_engine)
-
-    # Add new column 'id'
-    with sql_engine.begin() as connection:
-        connection.execute("ALTER TABLE solar_projects ADD id INTEGER")
-
-    # Set the new 'id' column to 0 for one row
-    with sql_engine.begin() as connection:
-        connection.execute("UPDATE solar_projects SET id = 0")
 
 
 if __name__ == "__main__":
