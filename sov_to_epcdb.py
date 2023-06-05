@@ -18,12 +18,12 @@ from sqlalchemy.sql import select, func
 import numpy as np
 
 
-def upload_solar_sov(sov_sheet, sql_engine) -> None:
+def upload_solar_sov(sov_sheet, sql_engine, keep_max_id=False) -> None:
     # upload the metadata
     readsheetname = "Solar SOV"
     df_master = pd.read_excel(sov_sheet, sheet_name=readsheetname, header=None)
     # change the other imports to use master.
-    df = df_master.drop(df_master[df_master.index >= 19].index)
+    df = df_master.drop(df_master[df_master.index >= 18].index)
     df = df.iloc[:, :3]
     # df.rename(columns={'1': 'ColumnName', '2': 'ColumnValue'}, inplace=True)
     df.rename(columns={df.columns[1]: "ColumnName"}, inplace=True)
@@ -40,7 +40,7 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
         columns={
             "Project Name": "Project_Name",
             "Project Tracker ID": "Project_Tracker_ID",
-            "Project Type": "Project_Type",
+            "Project Bid Type": "Project_Bid_Type",
             "Scenario Name": "Scenario_Name",
             "Scenario ID": "Scenario_ID",
             "Estimate Source": "Estimate_Source",
@@ -53,7 +53,7 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
             "MW AC": "MW_AC",
             "Module Count": "Module_Count",
             "Tracker Row Count": "Tracker_Row_Count",
-            "Labor \n(Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Labor Type": "Labor_Type",
             "Contractor": "Contractor",
             "Date Submitted": "Date_Submitted",
         },
@@ -67,7 +67,7 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
         metadata,
         Column("Project_Name", String),
         Column("Project_Tracker_ID", Integer),
-        Column("Project_Type", String),
+        Column("Project_Bid_Type", String),
         Column("Scenario_Name", String),
         Column("Scenario_ID", String),
         Column("Estimate_Source", String),
@@ -80,16 +80,18 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
         Column("MW_AC", Float),
         Column("Module_Count", Float),
         Column("Tracker_Row_Count", Float),
-        Column("Labor_Union_Prevailing_Non_Union", String),
+        Column("Labor_Type", String),
         Column("Contractor", String),
         Column("Date_Submitted", DateTime),
         Column("id", Integer),
     )
-    with sql_engine.connect() as connection:
-        result = connection.execute(text("SELECT MAX(id) FROM solar_projects"))
-        max_id = result.fetchone()[0]
+    max_id = get_max_id(sql_engine)
     if max_id is None:
         max_id = 0
+    if keep_max_id:
+        r_id = max_id
+    else:
+        r_id = max_id + 1
     droplist = dfpivot.columns.astype(str) == "nan"
     if droplist.any():
         dfpivot.drop(
@@ -97,7 +99,7 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
             axis=1,
             inplace=True,
         )
-    dfpivot["id"] = max_id + 1
+    dfpivot["id"] = r_id
     # uploads the project
     dfpivot.to_sql(
         con=sql_engine,
@@ -108,7 +110,7 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
         dtype={
             "Project_Name": String,
             "Project_Tracker_ID": Integer,
-            "Project_Type": String,
+            "Project_Bid_Type": String,
             "Scenario_Name": String,
             "Scenario_ID": String,
             "Estimate_Source": String,
@@ -121,7 +123,7 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
             "MW_AC": Float,
             "Module_Count": Float,
             "Tracker_Row_Count": Float,
-            "Labor_Union_Prevailing_Non_Union": String,
+            "Labor_Type": String,
             "Contractor": String,
             "Date_Submitted": DateTime,
             "id": Integer,
@@ -137,8 +139,9 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
     )
     df = pd.read_sql_query(query, sql_engine)
     rid = df["id"].to_list()[-1]
-    print(f"Upload ID: {rid}, options: {df['id'].iloc[:]}")
-    df = df_master.drop(df_master[df_master.index <= 20].index)
+    print(f"Solar Upload ID: {rid}, options: {df['id'].iloc[:]}")
+    print(f"Solar Upload ID: {r_id}")
+    df = df_master.drop(df_master[df_master.index <= 19].index)
     df.rename(columns={df.columns[0]: "Cost_Structure"}, inplace=True)
     df.rename(columns={df.columns[1]: "Description"}, inplace=True)
     df.rename(columns={df.columns[2]: "Quantity"}, inplace=True)
@@ -148,22 +151,22 @@ def upload_solar_sov(sov_sheet, sql_engine) -> None:
     df.rename(columns={df.columns[6]: "Price_per_Wp"}, inplace=True)
     df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
     df.rename(columns={df.columns[8]: "Typical_Inclusions"}, inplace=True)
+    df.iloc[-3:, df.columns.get_loc("Cost_Structure")] = ""
+    df.loc[:, "id"] = r_id
     df = df[df.Cost_Structure.notnull()]
-    df["id"] = rid
-
     df.fillna(value=pd.NA, inplace=True)
     df.to_sql(
         con=sql_engine, schema="dbo", name="solar_sov", if_exists="append", index=False
     )
-    print(f"{sov_sheet} successfully uploaded to Database")
+    print(f"Solar {sov_sheet} successfully uploaded to Database")
 
 
-def upload_hv_sov(sov_sheet, sql_engine) -> None:
+def upload_hv_sov(sov_sheet, sql_engine, keep_max_id=False) -> None:
     # upload the metadata
     readsheetname = "HV SOV"
     df_master = pd.read_excel(sov_sheet, sheet_name=readsheetname, header=None)
     # change the other imports to use master.
-    df = df_master.drop(df_master[df_master.index >= 17].index)
+    df = df_master.drop(df_master[df_master.index >= 16].index)
     df = df.iloc[:, :3]
     # df.rename(columns={'1': 'ColumnName', '2': 'ColumnValue'}, inplace=True)
     df.rename(columns={df.columns[1]: "ColumnName"}, inplace=True)
@@ -180,7 +183,7 @@ def upload_hv_sov(sov_sheet, sql_engine) -> None:
         columns={
             "Project Name": "Project_Name",
             "Project Tracker ID": "Project_Tracker_ID",
-            "Project Type": "Project_Type",
+            "Project Bid Type": "Project_Bid_Type",
             "Scenario Name": "Scenario_Name",
             "Scenario ID": "Scenario_ID",
             "Estimate Source": "Estimate_Source",
@@ -193,21 +196,21 @@ def upload_hv_sov(sov_sheet, sql_engine) -> None:
             "MW AC": "MW_AC",
             "Module Count": "Module_Count",
             "Tracker Row Count": "Tracker_Row_Count",
-            "Labor \n(Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Labor Type": "Labor_Type",
             "Contractor": "Contractor",
             "Date Submitted": "Date_Submitted",
         },
         inplace=True,
     )
     metadata = MetaData()
-    table_name = "hv_projects"
+    table_name = "HV_projects"
     # Make sure that the Column names and types match with your DataFrame's columns
     table = Table(
         table_name,
         metadata,
         Column("Project_Name", String),
         Column("Project_Tracker_ID", Integer),
-        Column("Project_Type", String),
+        Column("Project_Bid_Type", String),
         Column("Scenario_Name", String),
         Column("Scenario_ID", String),
         Column("Estimate_Source", String),
@@ -218,16 +221,18 @@ def upload_hv_sov(sov_sheet, sql_engine) -> None:
         Column("Buildable_Land_Version", String),
         Column("MW_AC", Float),
         Column("Interconnect_Voltage", Float),
-        Column("Labor_Union_Prevailing_Non_Union", String),
+        Column("Labor_Type", String),
         Column("Contractor", String),
         Column("Date_Submitted", DateTime),
         Column("id", Integer),
     )
-    with sql_engine.connect() as connection:
-        result = connection.execute(text("SELECT MAX(id) FROM hv_projects"))
-        max_id = result.fetchone()[0]
+    max_id = get_max_id(sql_engine)
     if max_id is None:
         max_id = 0
+    if keep_max_id:
+        r_id = max_id
+    else:
+        r_id = max_id + 1
     droplist = dfpivot.columns.astype(str) == "nan"
     if droplist.any():
         dfpivot.drop(
@@ -235,18 +240,18 @@ def upload_hv_sov(sov_sheet, sql_engine) -> None:
             axis=1,
             inplace=True,
         )
-    dfpivot["id"] = max_id + 1
+    dfpivot["id"] = r_id
     # uploads the project
     dfpivot.to_sql(
         con=sql_engine,
         schema="dbo",
-        name="hv_projects",
+        name="HV_projects",
         if_exists="append",
         index=False,
         dtype={
             "Project_Name": String,
             "Project_Tracker_ID": Integer,
-            "Project_Type": String,
+            "Project_Bid_Type": String,
             "Scenario_Name": String,
             "Scenario_ID": String,
             "Estimate_Source": String,
@@ -257,7 +262,7 @@ def upload_hv_sov(sov_sheet, sql_engine) -> None:
             "Buildable_Land_Version": String,
             "MW_AC": Float,
             "Interconnect_Voltage": Float,
-            "Labor_Union_Prevailing_Non_Union": String,
+            "Labor_Type": String,
             "Contractor": String,
             "Date_Submitted": DateTime,
             "id": Integer,
@@ -267,14 +272,15 @@ def upload_hv_sov(sov_sheet, sql_engine) -> None:
     # selects the first of the equivalent project ids, should be the last updated
     Project_Tracker_ID = dfpivot["Project_Tracker_ID"][0]
     query = text(
-        """select id from  hv_projects where Project_Tracker_ID = {}""".format(
+        """select id from  HV_projects where Project_Tracker_ID = {}""".format(
             Project_Tracker_ID, "{}"
         )
     )
     df = pd.read_sql_query(query, sql_engine)
     rid = df["id"].to_list()[-1]
-    print(f"Upload ID: {rid}, options: {df['id'].iloc[:]}")
-    df = df_master.drop(df_master[df_master.index <= 18].index)
+    print(f"HV Upload ID: {rid}, options: {df['id'].iloc[:]}")
+    print(f"HV Upload ID: {r_id}")
+    df = df_master.drop(df_master[df_master.index <= 17].index)
     df.rename(columns={df.columns[0]: "Cost_Structure"}, inplace=True)
     df.rename(columns={df.columns[1]: "Description"}, inplace=True)
     df.rename(columns={df.columns[2]: "Quantity"}, inplace=True)
@@ -283,22 +289,22 @@ def upload_hv_sov(sov_sheet, sql_engine) -> None:
     df.rename(columns={df.columns[5]: "Extended_Price"}, inplace=True)
     df.rename(columns={df.columns[6]: "Price_per_kW"}, inplace=True)
     df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
+    df.iloc[-2:, df.columns.get_loc("Cost_Structure")] = ""
+    df.loc[:, "id"] = r_id
     df = df[df.Cost_Structure.notnull()]
-    df["id"] = rid
-
     df.fillna(value=pd.NA, inplace=True)
     df.to_sql(
-        con=sql_engine, schema="dbo", name="hv_sov", if_exists="append", index=False
+        con=sql_engine, schema="dbo", name="HV_sov", if_exists="append", index=False
     )
-    print(f"{sov_sheet} successfully uploaded to Database")
+    print(f"HV {sov_sheet} successfully uploaded to Database")
 
 
-def upload_storage_sov(sov_sheet, sql_engine) -> None:
+def upload_storage_sov(sov_sheet, sql_engine, keep_max_id=False) -> None:
     # upload the metadata
     readsheetname = "Storage SOV"
     df_master = pd.read_excel(sov_sheet, sheet_name=readsheetname, header=None)
     # change the other imports to use master.
-    df = df_master.drop(df_master[df_master.index >= 23].index)
+    df = df_master.drop(df_master[df_master.index >= 22].index)
     df = df.iloc[:, :3]
     # df.rename(columns={'1': 'ColumnName', '2': 'ColumnValue'}, inplace=True)
     df.rename(columns={df.columns[1]: "ColumnName"}, inplace=True)
@@ -315,7 +321,7 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
         columns={
             "Project Name": "Project_Name",
             "Project Tracker ID": "Project_Tracker_ID",
-            "Project Type": "Project_Type",
+            "Project Bid Type": "Project_Bid_Type",
             "Scenario Name": "Scenario_Name",
             "Scenario ID": "Scenario_ID",
             "Estimate Source": "Estimate_Source",
@@ -327,26 +333,26 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
             "BESS OEM": "BESS_OEM",
             "Product Type": "Product_Type",
             "Coupling": "Coupling",
-            "Battery Size at POI[MW]": "Battery_Size_at_POI[MW]",
-            "Discharge Duration[hr]": "Discharge_Duration[hr]",
+            "Battery Size at POI(MW)": "Battery_Size_at_POI(MW)",
+            "Discharge Duration(hr)": "Discharge_Duration(hr)",
             "MWh Installed": "MWh_Installed",
             "BESS Container Quantity": "BESS_Container_Quantity",
             "PCS Quantity": "PCS_Quantity",
-            "Labor (Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Labor (Union/Prevailing/Non-Union)": "Labor_Type",
             "Contractor": "Contractor",
             "Date Submitted": "Date_Submitted",
         },
         inplace=True,
     )
     metadata = MetaData()
-    table_name = "storage_projects"
+    table_name = "Storage_projects"
     # Make sure that the Column names and types match with your DataFrame's columns
     table = Table(
         table_name,
         metadata,
         Column("Project_Name", String),
         Column("Project_Tracker_ID", Integer),
-        Column("Project_Type", String),
+        Column("Project_Bid_Type", String),
         Column("Scenario_Name", String),
         Column("Scenario_ID", String),
         Column("Estimate_Source", String),
@@ -358,21 +364,23 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
         Column("BESS_OEM", String),
         Column("Product_Type", String),
         Column("Coupling", String),
-        Column("Battery_Size_at_POI[MW]", Float),
-        Column("Discharge_Duration[hr]", String),
+        Column("Battery_Size_at_POI(MW)", Float),
+        Column("Discharge_Duration(hr)", String),
         Column("MWh_Installed", Float),
         Column("BESS_Container_Quantity", Float),
         Column("PCS_Quantity", Float),
-        Column("Labor_Union_Prevailing_Non_Union", String),
+        Column("Labor_Type", String),
         Column("Contractor", String),
         Column("Date_Submitted", DateTime),
         Column("id", Integer),
     )
-    with sql_engine.connect() as connection:
-        result = connection.execute(text("SELECT MAX(id) FROM storage_projects"))
-        max_id = result.fetchone()[0]
+    max_id = get_max_id(sql_engine)
     if max_id is None:
         max_id = 0
+    if keep_max_id:
+        r_id = max_id
+    else:
+        r_id = max_id + 1
     droplist = dfpivot.columns.astype(str) == "nan"
     if droplist.any():
         dfpivot.drop(
@@ -380,18 +388,18 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
             axis=1,
             inplace=True,
         )
-    dfpivot["id"] = max_id + 1
+    dfpivot["id"] = r_id
     # uploads the project
     dfpivot.to_sql(
         con=sql_engine,
         schema="dbo",
-        name="storage_projects",
+        name="Storage_projects",
         if_exists="append",
         index=False,
         dtype={
             "Project_Name": String,
             "Project_Tracker_ID": Integer,
-            "Project_Type": String,
+            "Project_Bid_Type": String,
             "Scenario_Name": String,
             "Scenario_ID": String,
             "Estimate_Source": String,
@@ -403,12 +411,12 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
             "BESS_OEM": String,
             "Product_Type": String,
             "Coupling": String,
-            "Battery_Size_at_POI[MW]": Float,
-            "Discharge_Duration[hr]": String,
+            "Battery_Size_at_POI(MW)": Float,
+            "Discharge_Duration(hr)": String,
             "MWh_Installed": Float,
             "BESS_Container_Quantity": Float,
             "PCS_Quantity": Float,
-            "Labor_Union_Prevailing_Non_Union": String,
+            "Labor_Type": String,
             "Contractor": String,
             "Date_Submitted": DateTime,
             "id": Integer,
@@ -424,8 +432,9 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
     )
     df = pd.read_sql_query(query, sql_engine)
     rid = df["id"].to_list()[-1]
-    print(f"Upload ID: {rid}, options: {df['id'].iloc[:]}")
-    df = df_master.drop(df_master[df_master.index <= 18].index)
+    print(f"Storage Upload ID: {rid}, options: {df['id'].iloc[:]}")
+    print(f"Storage Upload ID: {r_id}")
+    df = df_master.drop(df_master[df_master.index <= 23].index)
     df.rename(columns={df.columns[0]: "Cost_Structure"}, inplace=True)
     df.rename(columns={df.columns[1]: "Description"}, inplace=True)
     df.rename(columns={df.columns[2]: "Quantity"}, inplace=True)
@@ -434,8 +443,9 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
     df.rename(columns={df.columns[5]: "Extended_Price"}, inplace=True)
     df.rename(columns={df.columns[6]: "Price_per_kWh"}, inplace=True)
     df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
+    df.iloc[-2:, df.columns.get_loc("Cost_Structure")] = ""
+    df.loc[:, "id"] = r_id
     df = df[df.Cost_Structure.notnull()]
-    df["id"] = rid
     df.fillna(value=pd.NA, inplace=True)
     df.to_sql(
         con=sql_engine,
@@ -444,7 +454,7 @@ def upload_storage_sov(sov_sheet, sql_engine) -> None:
         if_exists="append",
         index=False,
     )
-    print(f"{sov_sheet} successfully uploaded to Database")
+    print(f"Storage {sov_sheet} successfully uploaded to Database")
 
 
 def change_projid_to_integer(sql_engine):
@@ -494,6 +504,17 @@ def db_conn_get():
     return engine
 
 
+def get_max_id(sql_engine):
+    with sql_engine.connect() as connection:
+        result = connection.execute(text("SELECT MAX(id) FROM HV_projects"))
+        max_id_hv = result.fetchone()[0]
+        result = connection.execute(text("SELECT MAX(id) FROM solar_projects"))
+        max_id_solar = result.fetchone()[0]
+        result = connection.execute(text("SELECT MAX(id) FROM storage_projects"))
+        max_id_storage = result.fetchone()[0]
+    return max([max_id_solar, max_id_hv, max_id_storage])
+
+
 def add_id_column(sql_engine):
     metadata = MetaData()
     my_table = Table("solar_projects", metadata, autoload_with=sql_engine)
@@ -541,7 +562,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
         columns={
             "Project Name": "Project_Name",
             "Project Tracker ID": "Project_Tracker_ID",
-            "Project Type": "Project_Type",
+            "Project Bid Type": "Project_Bid_Type",
             "Scenario Name": "Scenario_Name",
             "Scenario ID": "Scenario_ID",
             "Estimate Source": "Estimate_Source",
@@ -554,7 +575,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
             "MW AC": "MW_AC",
             "Module Count": "Module_Count",
             "Tracker Row Count": "Tracker_Row_Count",
-            "Labor \n(Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Labor Type": "Labor_Type",
             "Contractor": "Contractor",
             "Date Submitted": "Date_Submitted",
         },
@@ -603,11 +624,12 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
     df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
     df.rename(columns={df.columns[8]: "Typical_Inclusions"}, inplace=True)
     df = df[df.Cost_Structure.notnull()]
-    df["id"] = rid
+    df.iloc[:, df.columns.get_loc("id")] = r_id
 
     df.fillna(value=pd.NA, inplace=True)
+    df.replace("", pd.NA, inplace=True)
     df.to_sql(
-        con=conn_db, schema="dbo", name="solar_sov", if_exists="replace", index=False
+        con=conn_db, schema="dbo", name="solar_sov", if_exists="append", index=False
     )
     print("SQL Uploaded")
     ## Now for Storage
@@ -629,7 +651,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
         columns={
             "Project Name": "Project_Name",
             "Project Tracker ID": "Project_Tracker_ID",
-            "Project Type": "Project_Type",
+            "Project Bid Type": "Project_Bid_Type",
             "Scenario Name": "Scenario_Name",
             "Scenario ID": "Scenario_ID",
             "Estimate Source": "Estimate_Source",
@@ -641,12 +663,12 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
             "BESS OEM": "BESS_OEM",
             "Product Type": "Product_Type",
             "Coupling": "Coupling",
-            "Battery Size at POI[MW]": "Battery_Size_at_POI[MW]",
-            "Discharge Duration[hr]": "Discharge_Duration[hr]",
+            "Battery Size at POI(MW)": "Battery_Size_at_POI(MW)",
+            "Discharge Duration(hr)": "Discharge_Duration(hr)",
             "MWh Installed": "MWh_Installed",
             "BESS Container Quantity": "BESS_Container_Quantity",
             "PCS Quantity": "PCS_Quantity",
-            "Labor (Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Labor (Union/Prevailing/Non-Union)": "Labor_Type",
             "Contractor": "Contractor",
             "Date Submitted": "Date_Submitted",
         },
@@ -686,7 +708,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
     # df.rename(columns={df.columns[6]: "Price_per_kWh"}, inplace=True)
     # df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
     # df = df[df.Cost_Structure.notnull()]
-    # df["id"] = rid
+    # df.iloc[:, df.columns.get_loc("id")] = r_id
     # df.to_sql(
     #     con=conn_db, schema="dbo", name="storage_sov", if_exists="append", index=False
     # )
@@ -708,7 +730,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
     new_columns_projects = [
         "Project_Name",
         "Project_Tracker_ID",
-        "Project_Type",
+        "Project_Bid_Type",
         "Scenario_Name",
         "Scenario_ID",
         "Estimate_Source",
@@ -719,27 +741,27 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
         "Buildable_Land_Version",
         "MW_AC",
         "Interconnect_Voltage",
-        "Labor_Union_Prevailing_Non_Union",
+        "Labor_Type",
         "Contractor",
         "Date_submitted",
     ]
 
     # Create tables and columns
     with sql_engine.begin() as connection:
-        # Create "hv_projects" table
+        # Create "HV_projects" table
         connection.execute(
-            text("CREATE TABLE dbo.hv_projects (Project_Tracker_ID NVARCHAR(MAX));")
+            text("CREATE TABLE dbo.HV_projects (Project_Tracker_ID NVARCHAR(MAX));")
         )
         for col_name in new_columns_projects:
             connection.execute(
-                text(f"ALTER TABLE dbo.hv_projects ADD [{col_name}] NVARCHAR(MAX);")
+                text(f"ALTER TABLE dbo.HV_projects ADD [{col_name}] NVARCHAR(MAX);")
             )
 
-        # Create "hv_sov" table
-        connection.execute(text("CREATE TABLE dbo.hv_sov (id INT);"))
+        # Create "HV_sov" table
+        connection.execute(text("CREATE TABLE dbo.HV_sov (id INT);"))
         for col_name in new_columns_sov:
             connection.execute(
-                text(f"ALTER TABLE dbo.hv_sov ADD [{col_name}] NVARCHAR(MAX);")
+                text(f"ALTER TABLE dbo.HV_sov ADD [{col_name}] NVARCHAR(MAX);")
             )
 
     # retrieves the template to be used for the EPC-DB
@@ -763,7 +785,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
         columns={
             "Project Name": "Project_Name",
             "Project Tracker ID": "Project_Tracker_ID",
-            "Project Type": "Project_Type",
+            "Project Bid Type": "Project_Bid_Type",
             "Scenario Name": "Scenario_Name",
             "Scenario ID": "Scenario_ID",
             "Estimate Source": "Estimate_Source",
@@ -774,7 +796,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
             "Buildable Land Version": "Buildable_Land_Version",
             "MW AC": "MW_AC",
             "Interconnect Voltage": "Interconnect_Voltage",
-            "Labor \n(Union/Prevailing/Non-Union)": "Labor_Union_Prevailing_Non_Union",
+            "Labor Type": "Labor_Type",
             "Contractor": "Contractor",
             "Date Submitted": "Date_Submitted",
         },
@@ -791,7 +813,7 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
     dfpivot.to_sql(
         con=conn_db,
         schema="dbo",
-        name="hv_projects",
+        name="HV_projects",
         if_exists="append",
         index=False,
     )
@@ -813,14 +835,30 @@ def excel_epc_sov_to_db(sov_sheet, sql_engine) -> None:
     # df.rename(columns={df.columns[6]: "Price_per_Wp"}, inplace=True)
     # df.rename(columns={df.columns[7]: "Comments"}, inplace=True)
     # df = df[df.Cost_Structure.notnull()]
-    # df["id"] = rid
-    # df.to_sql(con=conn_db, schema="dbo", name="hv_sov", if_exists="append", index=False)
+    # df.iloc[:, df.columns.get_loc("id")] = r_id
+    # df.to_sql(con=conn_db, schema="dbo", name="HV_sov", if_exists="append", index=False)
     print()
 
 
 if __name__ == "__main__":
-    sov_fdir = "C:\\Users\\nils.rundquist\\PycharmProjects\\pythonProject\\"
-    sov = "Milagro_Rosendin_2023-03-01.xlsx"
     conn_db = db_conn_get()
-    # add_id_column(conn_db)
+    sov_fdir = "C:\\Users\\nils.rundquist\\PycharmProjects\\pythonProject\\"
+    # sov = "Milagro_Blattner_2023-02-27_PV_Storage_HV.xlsx"
+    # upload_solar_sov(sov, conn_db)
+    # upload_hv_sov(sov, conn_db)
+    # upload_storage_sov(sov, conn_db)
+    sov = "Milagro_EPCS_2023-02-27_HV.xlsx"
+    upload_hv_sov(sov, conn_db)
+    sov = "Milagro_EPCS_2023-02-27_HV_Adjusted.xlsx"
+    upload_hv_sov(sov, conn_db)
+    sov = "Milagro_EPCS_2023-03-06_Storage.xlsx"
+    upload_storage_sov(sov, conn_db)
+    sov = "Milagro_Rosendin_2023-03-01_PV_Storage_HV.xlsx"
     upload_solar_sov(sov, conn_db)
+    upload_hv_sov(sov, conn_db, keep_max_id=True)
+    upload_storage_sov(sov, conn_db, keep_max_id=True)
+    sov = "Milagro_Rosendin_2023-03-15_Storage_HV.xlsx"
+    upload_hv_sov(sov, conn_db)
+    upload_storage_sov(sov, conn_db, keep_max_id=True)
+    sov = "Milagro_Rosendin_2023-03-15_Storage_Adjusted.xlsx"
+    upload_storage_sov(sov, conn_db)
