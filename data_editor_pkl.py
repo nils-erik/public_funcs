@@ -1,23 +1,30 @@
 import streamlit as st
 import pandas as pd
+import io
+import pickle
 
-fname = st.text_input(
-    "File directory and name of .PKL file",
-    value="C:\\Users\\nils.rundquist\\PycharmProjects\\gsp_solaris_computron_frontend\\data\\project_templates\\",
+pkl_dat = st.file_uploader("Upload Pickle File", key="upload_pkl")
+if pkl_dat is not None:
+    pkl_dat = pd.read_pickle(pkl_dat)
+    pkl_dat = pd.DataFrame(pkl_dat).transpose()
+    data_edited = st.data_editor(pkl_dat, use_container_width=True)
+else:
+    st.markdown("File not currently found")
+st.markdown("***")
+
+fname2 = st.text_input(
+    "Enter in directory and file name of .PKL to save",
+    value="my_pkl_file_name.pkl",
 )
-with st.form(key="pkl_form"):
-    try:
-        pkl_dat = pd.read_pickle(fname)
-        data_edited = st.data_editor(pkl_dat, use_container_width=True)
-    except FileNotFoundError:
-        st.markdown("File not currently found")
-    st.markdown("***")
-
-    fname2 = st.text_input(
-        "Enter in directory and file name of .PKL to save",
-        value="C:\\Users\\nils.rundquist\\PycharmProjects\\gsp_solaris_computron_frontend\\data\\project_templates\\",
+downloaded = False
+try:
+    buffer = io.BytesIO()
+    pickle.dump(data_edited, buffer)
+    pickled_data = buffer.getvalue()
+    downloaded = st.download_button(
+        "Download Edited PKL File", pickled_data, file_name=fname2
     )
-    save_fname2 = st.form_submit_button("Save PKL file")
-    if save_fname2:
-        pd.to_pickle(data_edited, fname2)
-        st.markdown(f"{fname2} Pickle file saved!")
+except NameError:
+    st.markdown("No file uploaded")
+if downloaded:
+    st.markdown(f"{fname2} Pickle file saved!")
