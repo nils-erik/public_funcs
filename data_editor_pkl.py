@@ -18,8 +18,9 @@ fname2 = st.text_input(
 )
 downloaded = False
 try:
+    data_download = data_edited.transpose()
     buffer = io.BytesIO()
-    pickle.dump(data_edited, buffer)
+    pickle.dump(data_download, buffer)
     pickled_data = buffer.getvalue()
     downloaded = st.download_button(
         "Download Edited PKL File", pickled_data, file_name=fname2
