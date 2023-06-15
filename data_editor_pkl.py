@@ -29,3 +29,20 @@ except NameError:
     st.markdown("No file uploaded")
 if downloaded:
     st.markdown(f"{fname2} Pickle file saved!")
+
+fname3 = st.text_input(
+    "Enter in directory and file name of .csv to save",
+    value="my_pkl_file_name.csv",
+)
+
+downloaded_csv = False
+try:
+    data_downloadcsv = data_edited.transpose()
+    csv_data = data_downloadcsv.to_csv().encode("utf-8")
+    downloaded_csv = st.download_button(
+        "Download Edited CSV File", csv_data, file_name=fname3
+    )
+except NameError:
+    st.markdown("No file uploaded")
+if downloaded_csv:
+    st.markdown(f"{fname2} Pickle file saved!")
